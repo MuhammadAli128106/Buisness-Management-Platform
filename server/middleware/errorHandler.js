@@ -1,7 +1,7 @@
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, _next) {
   if (err?.status && err.expose !== false && err.status < 500) {
-    return res.status(err.status).json({ error: err.message, ...(err.details ? { details: err.details } : {}) });
+    return res.status(err.status).json({ error: err.message, ...(err.details ? { details: err.details } : {}), ...(err.extra || {}) });
   }
   if (err?.code === '22P02') return res.status(404).json({ error: 'Not found' }); // invalid uuid in URL
   if (err?.code === '23505') return res.status(409).json({ error: 'That value already exists.' });
