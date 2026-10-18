@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd server && npm ci --omit=dev && cd ../client && npm ci --include=dev",
+  "buildCommand": "cd client && npm run build",
+  "outputDirectory": "client/dist",
+  "functions": { "api/index.js": { "maxDuration": 30, "includeFiles": "server/**" } },
+  "regions": ["bom1"],
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ]
+}
