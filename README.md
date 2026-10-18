@@ -10,7 +10,7 @@ A multi-tenant CRM for service companies with 5 to 30 people. Each company gets 
 - **CRM:** contacts, companies, opportunities, custom pipelines and stages, custom fields (per pipeline), tags, saved filter lists, CSV export, activity timeline.
 - **Lead engine:** automatic assignment, acknowledgement window, escalation, availability and leave handling, recovery queue. Timers survive a server restart.
 - **Messaging (Telegram):** inbound and outbound customer messages, delivery status, duplicate and forged webhook protection, opt-out handling.
-- **Payments (Google Pay, test mode):** payment requests against opportunities and live payment status updates. No real money is charged.
+- **Payments (Google Pay, test mode):** payment links sent over Telegram, live payment status, and in-app refund records. No real money is charged.
 - **Calendar (Google):** book, reschedule and conflict-check appointments.
 - **Alerts (Telegram):** escalation notifications to employees.
 - **Audit log:** append-only record of important events.
@@ -23,7 +23,7 @@ A multi-tenant CRM for service companies with 5 to 30 people. Each company gets 
 | Server | Node 20, Express 5, `pg`, zod, bcryptjs, jsonwebtoken, helmet, express-rate-limit, `googleapis` |
 | Client | React 19, Vite, Tailwind 3, react-router-dom 7, SWR, sonner, recharts |
 | Database | PostgreSQL 13 or newer |
-| Deploy | One Railway service built from `main` |
+| Deploy | Railway (single service built from `main`) or Vercel (`vercel.json`, serverless API in `api/index.js`) |
 
 The server serves the API at `/api/v1` and the built client as a single-page app, all on one origin.
 
@@ -99,21 +99,19 @@ Webhooks need a public HTTPS address. Test against the Railway URL, or locally r
 
 ### Telegram (customer messaging and employee alerts)
 1. Message @BotFather → `/newbot` → copy the bot token.
-2. Paste the token into **Settings → Integrations**.
-3. The bot's webhook must point to
-   `PUBLIC_URL/api/v1/webhooks/telegram/<workspaceId>`.
-   The workspace id is shown on the Integrations page.
-4. **Employees (alerts):** each employee sends `/start` to the bot, gets their chat id from @userinfobot, and enters it on their Profile page.
-5. **Customers (messaging):** a customer must open the bot and send `/start` before the bot can message them.
+2. Paste the token into **Settings → Integrations** and save. The app checks the token and registers the webhook automatically
+   (`PUBLIC_URL/api/v1/webhooks/telegram/<workspaceId>`, protected by a secret-token header). Make sure `PUBLIC_URL` is set first.
+3. **Employees (alerts):** each employee sends `/myid` to the bot, then enters the chat id on their Profile page. Employee chats never become leads.
+4. **Customers (messaging):** a customer messages the bot, which creates a contact and a lead (source `telegram`). `/stop` opts them out and `/start` opts them back in.
 
-*Limits:* a Telegram bot cannot message someone who has never started it, and one bot token serves one workspace.
+*Limits:* a bot cannot message someone who has never messaged it, so "Message" on a contact fails with a clear reason until they do. One bot token serves one workspace.
 
 ### Google Pay (test mode)
-1. In **Settings → Integrations**, enter the Google Pay details for the workspace and keep the environment on **TEST**.
-2. In TEST mode Google Pay returns test payment data only. No real card is charged and no merchant approval is needed.
-3. To try the payment sheet, use a Google account that has joined Google's test card suite, or the test cards Google provides for TEST mode.
+1. In **Settings → Integrations → Payments**, enter the **merchant name** shown in the Google Pay sheet. Leave verification on `strict`.
+2. On an opportunity, create a payment request and send it. The customer receives a link (`PUBLIC_URL/pay/<token>`, valid 30 minutes) over Telegram and pays with the real Google Pay sheet in the TEST environment.
+3. The server verifies the payment token against Google's published TEST signing keys before marking the payment paid. Card details never reach our servers.
 
-*Limits:* this build runs Google Pay in test mode only. Going live would need Google's production access review and a real payment gateway.
+*Limits:* TEST environment only, so no real money moves, and any card saved in the payer's Google account returns a test token. Google Pay has no refund API in TEST mode, so refunds are recorded in the app by an authorised user.
 
 ### Google Calendar
 1. Google Cloud: create a project and enable the **Google Calendar API**.
