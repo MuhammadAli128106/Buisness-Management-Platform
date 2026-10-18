@@ -1,42 +1,17 @@
 // Public landing page — owner: Ali. Logged-in visitors go straight to the dashboard.
-// Palette: warm black, ivory, champagne gold. Headings in Cormorant Garamond (loaded below).
 import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const C = {
-  bg: '#0d0c0a',
-  surface: '#15130f',
-  line: 'rgba(232,220,196,0.10)',
-  ivory: '#f2ece0',
-  muted: '#a39e93',
-  dim: '#8a857a',
-  gold: '#c9a96e',
-  goldHover: '#d9bd86',
-  rust: '#c97a62',
-};
-const SERIF = { fontFamily: '"Cormorant Garamond", "Times New Roman", serif' };
-const FONT_HREF = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&display=swap';
-
-function useSerifFont() {
-  useEffect(() => {
-    if (document.querySelector(`link[href="${FONT_HREF}"]`)) return;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = FONT_HREF;
-    document.head.appendChild(link);
-  }, []);
-}
-
 const CHAIN = [
-  { who: 'Sara', role: 'Assigned' },
-  { who: 'Bilal', role: 'Next available' },
-  { who: 'Hina', role: 'Backup' },
-  { who: 'Maria', role: 'Manager' },
+  { who: 'Sara Malik', role: 'assigned' },
+  { who: 'Bilal Ahmed', role: 'next available' },
+  { who: 'Hina Raza', role: 'Sara’s backup' },
+  { who: 'Maria Khan', role: 'manager' },
 ];
-const WINDOW = 20; // seconds per step in the demo card
+const WINDOW = 20; // seconds per person in the demo
 
-/** A looping, self-running demo of the escalation chain. */
+/** Loops through the escalation chain at 4x speed so the whole thing plays in ~20 s. */
 function EscalationDemo() {
   const [step, setStep] = useState(0);
   const [left, setLeft] = useState(WINDOW);
@@ -48,147 +23,73 @@ function EscalationDemo() {
         setStep((i) => (i + 1) % CHAIN.length);
         return WINDOW;
       });
-    }, 250); // 4x real time so the whole chain plays in a few seconds
+    }, 250);
     return () => clearInterval(t);
   }, []);
 
-  const owner = CHAIN[step];
-  const urgent = left <= 6;
-
   return (
-    <div
-      className="w-full max-w-sm rounded-lg border p-6"
-      style={{ background: C.surface, borderColor: C.line }}
-      aria-label="Example of a lead escalating"
-    >
-      <div className="flex items-start justify-between gap-3">
+    <div className="w-full max-w-sm rounded-lg border border-navy-700 bg-navy-900 text-sm" aria-label="Example: a lead moving between people">
+      <div className="flex items-center justify-between border-b border-navy-700 px-4 py-3">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: C.dim }}>New lead · Web form</p>
-          <p className="mt-2 text-2xl" style={{ ...SERIF, color: C.ivory }}>Ahmed Khan</p>
-          <p className="mt-0.5 text-sm" style={{ color: C.muted }}>Quote for a 10 kW rooftop system</p>
+          <p className="font-medium text-white">Ahmed Khan</p>
+          <p className="text-slate-400">Web form · “Quote for a 10 kW system”</p>
         </div>
-        <span
-          className="shrink-0 rounded border px-2 py-0.5 font-mono text-sm tabular-nums transition-colors"
-          style={{ borderColor: urgent ? C.rust : C.line, color: urgent ? C.rust : C.ivory }}
-        >
+        <span className={`font-mono tabular-nums ${left <= 6 ? 'text-red-400' : 'text-slate-300'}`}>
           0:{String(left).padStart(2, '0')}
         </span>
       </div>
-
-      <div className="mt-6 border-t pt-4" style={{ borderColor: C.line }}>
-        <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: C.dim }}>Accountable now</p>
-        <p className="mt-2 flex items-center gap-2.5" style={{ color: C.ivory }}>
-          <span
-            className="flex h-7 w-7 items-center justify-center rounded-full border text-xs"
-            style={{ borderColor: C.gold, color: C.gold }}
-          >
-            {owner.who[0]}
-          </span>
-          {owner.who} <span className="text-sm" style={{ color: C.muted }}>· {owner.role}</span>
-        </p>
-      </div>
-
-      <ol className="mt-5 flex items-center gap-1.5" aria-label="Escalation chain">
+      <ol className="px-4 py-3">
         {CHAIN.map((c, i) => (
-          <li key={c.who} className="flex flex-1 flex-col gap-2">
-            <span
-              className="h-px transition-colors duration-300"
-              style={{ background: i === step ? C.gold : i < step ? C.muted : C.line, height: i === step ? 2 : 1 }}
-            />
-            <span className="text-[11px]" style={{ color: i === step ? C.ivory : C.dim }}>{c.role}</span>
+          <li key={c.who} className="flex items-center justify-between py-1.5">
+            <span className={i === step ? 'text-white' : i < step ? 'text-slate-500 line-through decoration-slate-600' : 'text-slate-500'}>
+              {c.who}
+            </span>
+            <span className={`text-xs ${i === step ? 'text-accent' : 'text-slate-500'}`}>
+              {i === step ? `${c.role} · has it now` : c.role}
+            </span>
           </li>
         ))}
       </ol>
-      <p className="mt-5 text-xs leading-relaxed" style={{ color: C.dim }}>
-        Not acknowledged in time? It moves on — automatically, and on the record.
-      </p>
     </div>
   );
 }
 
-const FEATURES = [
-  {
-    title: 'One owner, always',
-    body: 'Round-robin to whoever is available. Ignored leads escalate to the next person, a backup, then a manager.',
-  },
-  {
-    title: 'Real conversations',
-    body: 'Customers message you on Telegram, pay through Google Pay, and book onto real Google calendars — all on one record.',
-  },
-  {
-    title: 'Nothing goes unseen',
-    body: 'A recovery queue for stuck leads, a live dashboard, and an audit trail no one can edit.',
-  },
+const STEPS = [
+  ['A lead comes in', 'From your website form, a Telegram message, or someone typing it in.'],
+  ['Someone owns it', 'It goes to the next person who is marked available and isn’t already full. They get a timer.'],
+  ['If they don’t respond', 'It moves to the next person, then their backup, then their manager. Each of them gets a Telegram alert.'],
+  ['You can see all of it', 'Stuck leads, response times and who did what are on the dashboard and in a log nobody can edit.'],
 ];
 
-const focusRing = 'focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[#c9a96e]';
-
 export default function Landing() {
-  useSerifFont();
   const { user, loading } = useAuth();
   if (!loading && user) return <Navigate to="/dashboard" replace />;
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden" style={{ background: C.bg, color: C.muted }}>
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[520px]"
-        style={{ background: 'radial-gradient(50% 55% at 75% 0%, rgba(201,169,110,0.10), transparent)' }}
-        aria-hidden="true"
-      />
-
-      <header className="relative mx-auto flex max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
-        <span className="flex items-center gap-3" style={{ color: C.ivory }}>
-          <span
-            aria-hidden="true"
-            className="flex h-8 w-8 items-center justify-center rounded-sm border text-lg leading-none"
-            style={{ ...SERIF, borderColor: C.gold, color: C.gold }}
-          >
-            L
-          </span>
-          <span className="text-sm uppercase tracking-[0.28em]">LeadGuard</span>
-        </span>
-        <nav className="flex items-center gap-1 text-sm sm:gap-3">
-          <Link to="/login" className={`px-3 py-2 transition-colors hover:text-[#f2ece0] ${focusRing}`} style={{ color: C.muted }}>
-            Log in
-          </Link>
-          <Link
-            to="/signup"
-            className={`rounded-sm border px-4 py-2 transition-colors hover:bg-[#c9a96e] hover:text-[#0d0c0a] ${focusRing}`}
-            style={{ borderColor: C.gold, color: C.gold }}
-          >
-            Get started
-          </Link>
+    <div className="min-h-screen bg-navy-950 text-slate-300">
+      <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-5 sm:px-6">
+        <span className="text-lg font-semibold tracking-tight text-white">LeadGuard</span>
+        <nav className="flex items-center gap-1 text-sm">
+          <Link to="/login" className="rounded-md px-3 py-2 text-slate-300 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Log in</Link>
+          <Link to="/signup" className="rounded-md bg-white px-3 py-2 font-medium text-navy-950 hover:bg-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">Sign up</Link>
         </nav>
       </header>
 
-      <main className="relative">
-        <section className="mx-auto grid max-w-6xl items-center gap-14 px-5 pb-24 pt-12 sm:px-8 md:grid-cols-[1.35fr_1fr] md:pt-24">
+      <main>
+        <section className="mx-auto grid max-w-5xl items-center gap-12 px-4 pb-20 pt-10 sm:px-6 md:grid-cols-[1.25fr_1fr] md:pt-16">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.28em]" style={{ color: C.gold }}>For sales teams of 5 to 30</p>
-            <h1
-              className="mt-5 text-5xl leading-[1.05] sm:text-6xl lg:text-7xl"
-              style={{ ...SERIF, color: C.ivory, fontWeight: 500 }}
-            >
-              Every lead gets an owner.
-              <span className="block italic" style={{ color: C.gold }}>Every single time.</span>
+            <h1 className="text-4xl font-semibold leading-tight tracking-tight text-white [text-wrap:balance] sm:text-5xl">
+              No lead waits for someone who’s on leave.
             </h1>
-            <p className="mt-7 max-w-md text-base leading-relaxed sm:text-lg">
-              LeadGuard assigns each new enquiry to someone who&apos;s available, starts the clock, and escalates it before a customer is left waiting.
+            <p className="mt-5 max-w-lg text-lg text-slate-400">
+              LeadGuard is a CRM for small sales teams. Every new lead goes to one person who’s actually available, and if they don’t pick it up in time, it goes to someone else.
             </p>
-            <div className="mt-10 flex flex-wrap items-center gap-6">
-              <Link
-                to="/signup"
-                className={`rounded-sm px-6 py-3 text-sm font-medium tracking-wide transition-colors hover:bg-[#d9bd86] ${focusRing}`}
-                style={{ background: C.gold, color: C.bg }}
-              >
-                Create your workspace
+            <div className="mt-8 flex flex-wrap items-center gap-4">
+              <Link to="/signup" className="rounded-md bg-primary px-5 py-2.5 font-medium text-white hover:bg-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                Set up your team
               </Link>
-              <Link
-                to="/login"
-                className={`border-b pb-0.5 text-sm tracking-wide transition-colors hover:text-[#f2ece0] ${focusRing}`}
-                style={{ borderColor: C.line, color: C.ivory }}
-              >
-                Log in →
+              <Link to="/login" className="text-sm text-slate-300 underline underline-offset-4 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                I already have an account
               </Link>
             </div>
           </div>
@@ -197,24 +98,23 @@ export default function Landing() {
           </div>
         </section>
 
-        <section className="border-t" style={{ borderColor: C.line }}>
-          <div className="mx-auto grid max-w-6xl gap-12 px-5 py-20 sm:px-8 md:grid-cols-3">
-            {FEATURES.map((f, i) => (
-              <div key={f.title}>
-                <p className="text-sm" style={{ ...SERIF, color: C.gold }}>{['I', 'II', 'III'][i]}</p>
-                <h2 className="mt-3 text-2xl" style={{ ...SERIF, color: C.ivory, fontWeight: 500 }}>{f.title}</h2>
-                <p className="mt-3 leading-relaxed">{f.body}</p>
-              </div>
-            ))}
+        <section className="border-t border-navy-800">
+          <div className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+            <h2 className="text-sm font-medium text-slate-400">What happens to a lead</h2>
+            <ol className="mt-6 divide-y divide-navy-800 border-y border-navy-800">
+              {STEPS.map(([title, body]) => (
+                <li key={title} className="grid gap-1 py-4 sm:grid-cols-[14rem_1fr] sm:gap-6">
+                  <span className="font-medium text-white">{title}</span>
+                  <span className="text-slate-400">{body}</span>
+                </li>
+              ))}
+            </ol>
           </div>
         </section>
       </main>
 
-      <footer className="border-t" style={{ borderColor: C.line }}>
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-5 py-7 text-xs tracking-wide sm:flex-row sm:justify-between sm:px-8" style={{ color: C.dim }}>
-          <span>© {new Date().getFullYear()} LeadGuard</span>
-          <span>Leads, conversations, payments and appointments — one record.</span>
-        </div>
+      <footer className="mx-auto max-w-5xl px-4 pb-8 text-sm text-slate-500 sm:px-6">
+        LeadGuard · Telegram, Google Pay and Google Calendar connected
       </footer>
     </div>
   );
