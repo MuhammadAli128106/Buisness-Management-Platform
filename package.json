@@ -1,0 +1,10 @@
+{
+  "name": "business-management-platform",
+  "private": true,
+  "scripts": {
+    "build": "cd server && npm ci --omit=dev && cd ../client && npm ci --include=dev && npm run build",
+    "start": "node server/index.js",
+    "seed": "node server/db/seed.js"
+  },
+  "engines": { "node": ">=20" }
+}

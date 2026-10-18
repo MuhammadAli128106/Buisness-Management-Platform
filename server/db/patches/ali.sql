@@ -1,0 +1,1 @@
+-- Ali: idempotent extra indexes only (runs after schema.sql)
