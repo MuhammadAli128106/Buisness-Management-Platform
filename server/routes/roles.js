@@ -7,13 +7,26 @@ const { validate } = require('../middleware/validate');
 const { httpError } = require('../middleware/errorHandler');
 const { isUuid } = require('../utils/dbSecurity');
 const { audit } = require('../utils/audit');
-const { ALL_PERMISSIONS, PERMISSION_LABELS } = require('../utils/permissions');
+const { ALL_PERMISSIONS, PERMISSION_LABELS, DEFAULT_ROLES } = require('../utils/permissions');
 
 const router = express.Router();
 const permArray = z.array(z.enum(ALL_PERMISSIONS)).max(ALL_PERMISSIONS.length);
 
 router.get('/', async (req, res, next) => {
   try {
+    // Self-repair: a workspace with no roles at all (e.g. created mid-reseed) gets the signup defaults back,
+    // otherwise nobody can be invited. ON CONFLICT keeps this safe if two requests race.
+    const { n } = await queryOne('SELECT count(*)::int AS n FROM roles WHERE workspace_id = $1', [req.user.ws]);
+    if (n === 0) {
+      for (const [roleName, perms] of Object.entries(DEFAULT_ROLES)) {
+        // eslint-disable-next-line no-await-in-loop
+        await queryOne(
+          'INSERT INTO roles (workspace_id, name, permissions) VALUES ($1,$2,$3) ON CONFLICT (workspace_id, name) DO NOTHING RETURNING id',
+          [req.user.ws, roleName, perms],
+        );
+      }
+      await audit(null, { ws: req.user.ws, event_type: 'role.created', target_type: 'role', after: { restored_defaults: Object.keys(DEFAULT_ROLES) } });
+    }
     const rows = await queryAll(
       `SELECT r.*, (SELECT count(*) FROM users u WHERE u.role_id = r.id AND u.is_active)::int AS user_count
          FROM roles r WHERE r.workspace_id = $1 ORDER BY r.created_at`, [req.user.ws],
