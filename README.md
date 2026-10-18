@@ -2,17 +2,17 @@
 
 A multi-tenant CRM for service companies with 5 to 30 people. Each company gets its own **workspace**, fully isolated from every other.
 
-**Core promise:** every incoming lead always has exactly one accountable owner, and it escalates automatically if nobody acts on it. Leads arrive from a public web form, WhatsApp, or manual entry.
+**Core promise:** every incoming lead always has exactly one accountable owner, and it escalates automatically if nobody acts on it. Leads arrive from a public web form, Telegram, or manual entry.
 
 ## Features
 
 - **Workspaces, roles and permissions:** server-side permission checks, masked opportunity values for roles without access, strict isolation between workspaces.
 - **CRM:** contacts, companies, opportunities, custom pipelines and stages, custom fields (per pipeline), tags, saved filter lists, CSV export, activity timeline.
 - **Lead engine:** automatic assignment, acknowledgement window, escalation, availability and leave handling, recovery queue. Timers survive a server restart.
-- **WhatsApp (Twilio):** inbound and outbound messages, delivery status, duplicate and forged webhook protection, opt-out handling.
-- **Payments (Stripe, test mode):** payment links, live status updates, refunds.
+- **Messaging (Telegram):** inbound and outbound customer messages, delivery status, duplicate and forged webhook protection, opt-out handling.
+- **Payments (Google Pay, test mode):** payment requests against opportunities and live payment status updates. No real money is charged.
 - **Calendar (Google):** book, reschedule and conflict-check appointments.
-- **Alerts (Telegram):** escalation notifications.
+- **Alerts (Telegram):** escalation notifications to employees.
 - **Audit log:** append-only record of important events.
 - **Live dashboard:** key numbers, pipeline by stage, availability, upcoming appointments, collected vs projected payments.
 
@@ -20,7 +20,7 @@ A multi-tenant CRM for service companies with 5 to 30 people. Each company gets 
 
 | Layer | Tools |
 |---|---|
-| Server | Node 20, Express 5, `pg`, zod, bcryptjs, jsonwebtoken, helmet, express-rate-limit, `twilio`, `stripe`, `googleapis` |
+| Server | Node 20, Express 5, `pg`, zod, bcryptjs, jsonwebtoken, helmet, express-rate-limit, `googleapis` |
 | Client | React 19, Vite, Tailwind 3, react-router-dom 7, SWR, sonner, recharts |
 | Database | PostgreSQL 13 or newer |
 | Deploy | One Railway service built from `main` |
@@ -68,10 +68,10 @@ Open http://localhost:5173.
 | `APP_ENC_KEY` | AES-256-GCM key for integration secrets and Google tokens. Generate with `openssl rand -hex 32`. |
 | `PUBLIC_URL` | Public HTTPS address of the app, no trailing slash. Needed for webhooks and OAuth. |
 | `NODE_ENV` | `production` on Railway. |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client (Google Calendar). |
 | `PORT` | Set by Railway. Defaults to 8080 locally. |
 
-Twilio, Stripe and Telegram credentials are **per workspace**. Enter them on **Settings → Integrations**. They are stored encrypted and only ever shown masked.
+Telegram and Google Pay credentials are **per workspace**. Enter them on **Settings → Integrations**. They are stored encrypted and only ever shown masked.
 
 ## Demo logins
 
@@ -97,24 +97,23 @@ Webhooks need a public HTTPS address. Test against the Railway URL, or locally r
 3. Settings → Networking → Generate Domain, then paste it into `PUBLIC_URL`.
 4. Build command `npm run build`, start command `npm start`.
 
-### Twilio WhatsApp sandbox
-1. Sign up → Messaging → Try it out → WhatsApp sandbox.
-2. Every tester sends the join phrase from their own phone.
-3. Copy the Account SID, Auth Token and sandbox number (`whatsapp:+14155238886`) into **Settings → Integrations**.
-4. In the sandbox settings, set **When a message comes in** to
-   `PUBLIC_URL/api/v1/webhooks/twilio/<workspaceId>` (POST). The workspace id is shown on the Integrations page.
+### Telegram (customer messaging and employee alerts)
+1. Message @BotFather → `/newbot` → copy the bot token.
+2. Paste the token into **Settings → Integrations**.
+3. The bot's webhook must point to
+   `PUBLIC_URL/api/v1/webhooks/telegram/<workspaceId>`.
+   The workspace id is shown on the Integrations page.
+4. **Employees (alerts):** each employee sends `/start` to the bot, gets their chat id from @userinfobot, and enters it on their Profile page.
+5. **Customers (messaging):** a customer must open the bot and send `/start` before the bot can message them.
 
-*Limits:* the sandbox only reaches phones that sent the join phrase, and free-form replies only work within 24 hours of the customer's last message.
+*Limits:* a Telegram bot cannot message someone who has never started it, and one bot token serves one workspace.
 
-### Stripe (test mode)
-1. Sign up and stay in **Test mode**. Copy the `sk_test_...` key from Developers → API keys.
-2. Developers → Webhooks → Add endpoint:
-   `PUBLIC_URL/api/v1/webhooks/stripe/<workspaceId>`
-   with these events: `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_failed`, `payment_intent.payment_failed`, `charge.refunded`.
-3. Copy the signing secret (`whsec_...`).
-4. Paste the secret key and the signing secret into **Settings → Integrations**.
+### Google Pay (test mode)
+1. In **Settings → Integrations**, enter the Google Pay details for the workspace and keep the environment on **TEST**.
+2. In TEST mode Google Pay returns test payment data only. No real card is charged and no merchant approval is needed.
+3. To try the payment sheet, use a Google account that has joined Google's test card suite, or the test cards Google provides for TEST mode.
 
-*Test card:* `4242 4242 4242 4242`, any future date, any CVC.
+*Limits:* this build runs Google Pay in test mode only. Going live would need Google's production access review and a real payment gateway.
 
 ### Google Calendar
 1. Google Cloud: create a project and enable the **Google Calendar API**.
@@ -124,10 +123,6 @@ Webhooks need a public HTTPS address. Test against the Railway URL, or locally r
 4. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the environment variables.
 
 *Limits:* the app is in Google testing mode, so only listed test users can connect, and refresh tokens may expire after 7 days.
-
-### Telegram
-1. Message @BotFather → `/newbot` → copy the bot token into **Settings → Integrations**.
-2. Each employee sends `/start` to the bot, gets their chat id from @userinfobot, and enters it on their Profile page.
 
 ## Tests
 
