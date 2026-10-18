@@ -8,6 +8,7 @@ import Layout from './components/Layout';
 import { Spinner } from './components/ui';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import Landing from './pages/Landing';
 
 const P = (loader) => lazy(loader);
 const Dashboard = P(() => import('./pages/Dashboard'));
@@ -63,13 +64,13 @@ export default function App() {
       <Toaster richColors position="top-right" closeButton />
       <Suspense fallback={<Loading />}>
         <Routes>
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/f/:slug" element={<PublicForm />} />
           <Route path="/pay/:token" element={<PayPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/leads" element={<Leads />} />
               <Route path="/leads/:id" element={<LeadDetail />} />
