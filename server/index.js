@@ -20,10 +20,6 @@ app.use(cookieParser());
 const API = '/api/v1';
 const r = (name) => require(`./routes/${name}`);
 
-// ── Public, non-JSON webhooks (signature-verified inside) ───────────────────────
-app.use(`${API}/webhooks/stripe`, express.raw({ type: '*/*', limit: '1mb' }), r('webhooksStripe'));
-app.use(`${API}/webhooks/twilio`, express.urlencoded({ extended: false, limit: '1mb' }), r('webhooksTwilio'));
-
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
@@ -31,6 +27,8 @@ app.get(`${API}/ping`, (_req, res) => res.json({ data: { ok: true } }));
 
 // ── Public JSON routes ────────────────────────────────────────────────────────
 app.use(`${API}/public/forms`, r('publicForms'));
+app.use(`${API}/public/pay`, r('publicPay'));               // Google Pay link page (token = credential)
+app.use(`${API}/webhooks/telegram`, r('webhooksTelegram')); // secret-token verified inside
 
 // ── CSRF for everything cookie-authenticated below ────────────────────────────
 app.use(API, requireCsrf);

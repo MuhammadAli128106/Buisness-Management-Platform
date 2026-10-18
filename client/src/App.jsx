@@ -25,6 +25,7 @@ const Payments = P(() => import('./pages/Payments'));
 const Audit = P(() => import('./pages/Audit'));
 const Profile = P(() => import('./pages/Profile'));
 const PublicForm = P(() => import('./pages/PublicForm'));
+const PayPage = P(() => import('./pages/PayPage'));
 const Users = P(() => import('./pages/settings/Users'));
 const Roles = P(() => import('./pages/settings/Roles'));
 const Pipelines = P(() => import('./pages/settings/Pipelines'));
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/f/:slug" element={<PublicForm />} />
+          <Route path="/pay/:token" element={<PayPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
               <Route index element={<Navigate to="/dashboard" replace />} />

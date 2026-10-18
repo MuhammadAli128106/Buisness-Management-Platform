@@ -18,7 +18,7 @@ const { audit } = require('../utils/audit');
 const { logActivity } = require('../utils/activity');
 const notify = require('./notify');
 
-const SOURCE_LABEL = { web_form: 'Web form', whatsapp: 'WhatsApp', manual: 'Manual entry' };
+const SOURCE_LABEL = { web_form: 'Web form', whatsapp: 'WhatsApp', telegram: 'Telegram', manual: 'Manual entry' };
 const STATUSES = ['available', 'busy', 'on_leave', 'offline'];
 const STATUS_LABEL = { available: 'Available', busy: 'Busy', on_leave: 'On leave', offline: 'Offline' };
 const ACTION_KINDS = ['note', 'message', 'stage', 'appointment', 'call'];

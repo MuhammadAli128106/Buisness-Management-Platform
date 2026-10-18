@@ -8,9 +8,8 @@ import { Badge, Button, DataTable, Field, Input, Modal, PageHeader, Pagination, 
 
 const STATUS = { connected: ['green', '● Connected'], error: ['red', '▲ Error'], not_connected: ['gray', '○ Not connected'] };
 const FIELDS = {
-  twilio: [['account_sid', 'Account SID', 'AC…'], ['auth_token', 'Auth token', '', 'password'], ['from', 'WhatsApp sandbox number', '+14155238886']],
-  stripe: [['secret_key', 'Secret key (test mode)', 'sk_test_…', 'password'], ['webhook_secret', 'Webhook signing secret', 'whsec_…', 'password']],
   telegram: [['bot_token', 'Bot token from @BotFather', '123456:ABC…', 'password']],
+  googlepay: [['merchant_name', 'Business name shown in Google Pay', 'Acme Solar']],
 };
 const EV_TONE = { ok: 'green', duplicate: 'blue', error: 'red', rejected: 'red', retrying: 'yellow' };
 
@@ -44,9 +43,9 @@ function ProviderCard({ p, onConfigure, onDisconnect }) {
       {p.last_error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800">⚠ {p.last_error}</p>}
       {p.webhook_urls && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Webhook URLs to paste into {p.provider === 'twilio' ? 'Twilio' : 'Stripe'}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Webhook URL</p>
           {Object.entries(p.webhook_urls).map(([k, v]) => <CopyRow key={k} label={k} value={v} />)}
-          {p.webhook_events && <p className="text-xs text-slate-500">Events: {p.webhook_events.join(', ')}</p>}
+          {p.webhook_note && <p className="text-xs text-slate-500">{p.webhook_note}</p>}
         </div>
       )}
       <details className="text-sm">
@@ -85,8 +84,8 @@ export default function Integrations() {
   const save = async (e) => {
     e.preventDefault(); setBusy(true); setErrors({});
     try {
-      await apiPut(`/integrations/${editing.provider}`, form);
-      toast.success(`${editing.name} connected — credentials verified with the provider`);
+      const r = await apiPut(`/integrations/${editing.provider}`, form).catch((x) => { throw x; });
+      if (r.data?.warning) toast.warning(r.data.warning); else toast.success(`${editing.name} connected — verified with the provider`);
       setEditing(null); mutate(); events.mutate();
     } catch (err) { setErrors(err.details || {}); toast.error(err.message); } finally { setBusy(false); }
   };
@@ -120,7 +119,7 @@ export default function Integrations() {
         <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
           <h2 className="text-lg font-semibold text-slate-900">Synchronisation history</h2>
           <div className="flex flex-wrap gap-2">
-            <Field label="Provider"><Select value={filters.provider} onChange={(e) => setFilters({ ...filters, provider: e.target.value, page: 1 })} placeholder="All" options={['twilio', 'stripe', 'telegram', 'google'].map((v) => ({ value: v, label: v }))} /></Field>
+            <Field label="Provider"><Select value={filters.provider} onChange={(e) => setFilters({ ...filters, provider: e.target.value, page: 1 })} placeholder="All" options={['telegram', 'googlepay', 'google'].map((v) => ({ value: v, label: v }))} /></Field>
             <Field label="Result"><Select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value, page: 1 })} placeholder="All" options={['ok', 'error', 'rejected', 'duplicate'].map((v) => ({ value: v, label: v }))} /></Field>
           </div>
         </div>

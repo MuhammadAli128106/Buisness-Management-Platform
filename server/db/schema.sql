@@ -198,3 +198,21 @@ CREATE TABLE IF NOT EXISTS notifications (
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','failed','skipped')),
   attempts int NOT NULL DEFAULT 0, next_attempt_at timestamptz NOT NULL DEFAULT now(),
   last_error text, sent_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
+
+-- ── Provider switch (organiser announcement 12:47): Telegram replaces Twilio for messaging (I1),
+--    Google Pay (TEST environment) replaces Stripe for payments (I2). Idempotent migrations.
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS telegram_chat_id text;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS telegram_username text;
+CREATE UNIQUE INDEX IF NOT EXISTS contacts_ws_tg ON contacts(workspace_id, telegram_chat_id) WHERE telegram_chat_id IS NOT NULL AND deleted_at IS NULL;
+ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_source_check;
+ALTER TABLE leads ADD CONSTRAINT leads_source_check CHECK (source IN ('web_form','whatsapp','telegram','manual'));
+ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_provider_check;
+ALTER TABLE integrations ADD CONSTRAINT integrations_provider_check CHECK (provider IN ('twilio','stripe','telegram','google','googlepay'));
+ALTER TABLE conversations ALTER COLUMN channel SET DEFAULT 'telegram';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS external_id text;
+CREATE UNIQUE INDEX IF NOT EXISTS messages_ws_external ON messages(workspace_id, external_id) WHERE external_id IS NOT NULL;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider text NOT NULL DEFAULT 'googlepay';
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS link_token text;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider_ref text;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+CREATE UNIQUE INDEX IF NOT EXISTS payments_link_token ON payments(link_token) WHERE link_token IS NOT NULL;

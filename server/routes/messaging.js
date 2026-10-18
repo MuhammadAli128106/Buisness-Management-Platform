@@ -1,4 +1,4 @@
-// Conversations & messages (I1.3, I1.6, I1.7, I1.9) — owner: Musa. Mounted at /api/v1.
+// Conversations & messages over Telegram (I1.3, I1.6, I1.7, I1.9) — owner: Musa. Mounted at /api/v1.
 const express = require('express');
 const { z } = require('zod');
 const { q } = require('../db/index');
@@ -6,7 +6,7 @@ const { requirePerm, hasPerm } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { httpError } = require('../middleware/errorHandler');
 const { isUuid } = require('../utils/dbSecurity');
-const { sendWhatsApp, retryMessage } = require('../services/twilio');
+const { sendToContact, retryMessage } = require('../services/messenger');
 
 const router = express.Router();
 const bodySchema = z.object({ body: z.string().trim().min(1, 'Type a message').max(1600) });
@@ -66,7 +66,7 @@ router.get('/conversations/:id/messages', requirePerm('crm.view'), async (req, r
 router.post('/conversations/:id/messages', requirePerm('crm.edit'), validate({ body: bodySchema }), async (req, res, next) => {
   try {
     const conv = await loadConversation(req, req.params.id);
-    const m = await sendWhatsApp({ ws: req.user.ws, contactId: conv.contact_id, body: req.body.body, userId: req.user.id });
+    const m = await sendToContact({ ws: req.user.ws, contactId: conv.contact_id, body: req.body.body, userId: req.user.id });
     res.status(m.status === 'failed' ? 202 : 201).json({ data: m });
   } catch (e) { next(e); }
 });
@@ -76,7 +76,7 @@ router.post('/contacts/:id/messages', requirePerm('crm.edit'), validate({ body: 
     if (!isUuid(req.params.id)) throw httpError(404, 'Not found');
     const ct = (await q().query('SELECT id, owner_id FROM contacts WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL', [req.params.id, req.user.ws])).rows[0];
     if (!ct) throw httpError(404, 'Not found');
-    const m = await sendWhatsApp({ ws: req.user.ws, contactId: ct.id, body: req.body.body, userId: req.user.id });
+    const m = await sendToContact({ ws: req.user.ws, contactId: ct.id, body: req.body.body, userId: req.user.id });
     res.status(m.status === 'failed' ? 202 : 201).json({ data: m });
   } catch (e) { next(e); }
 });

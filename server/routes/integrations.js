@@ -10,58 +10,46 @@ const { audit } = require('../utils/audit');
 const { maskSecret } = require('../utils/crypto');
 const { saveConfig, removeConfig, getConfig } = require('../services/integrationsStore');
 const { recordEvent } = require('../services/integrationEvents');
-const { publicBase } = require('../services/twilio');
+const { registerWebhook, webhookUrl } = require('../services/messenger');
 
 const router = express.Router();
 
 const PROVIDERS = {
-  twilio: {
-    name: 'WhatsApp (Twilio sandbox)', purpose: 'Talk to customers and capture leads from incoming messages.',
-    limits: [
-      'Sandbox mode: only phones that have sent the join phrase to the sandbox number can send or receive messages.',
-      'WhatsApp allows free-form replies only within 24 hours of the customer\'s last message.',
-      'Sandbox messages are for testing only and show the Twilio sandbox sender.',
-    ],
-    schema: z.object({
-      account_sid: z.string().trim().regex(/^AC[0-9a-fA-F]{32}$/, 'Account SID starts with AC and is 34 characters'),
-      auth_token: z.string().trim().min(16, 'Paste the full auth token'),
-      from: z.string().trim().regex(/^(whatsapp:)?\+\d{8,15}$/, 'Sandbox number like +14155238886'),
-    }),
-    hint: (c) => ({ account_sid: maskSecret(c.account_sid), auth_token: maskSecret(c.auth_token), from: c.from }),
-    test: async (c) => require('../services/twilio').testCredentials(c),
-  },
-  stripe: {
-    name: 'Payments (Stripe test mode)', purpose: 'Collect payments for opportunities and track their status.',
-    limits: [
-      'Test mode only: pay with card 4242 4242 4242 4242, any future expiry date, any CVC.',
-      'Card details are entered only on Stripe\'s hosted page — this app never sees or stores them.',
-      'Payment status updates arrive through Stripe\'s webhook; links expire after 30 minutes.',
-    ],
-    schema: z.object({
-      secret_key: z.string().trim().regex(/^(sk|rk)_test_/, 'Use a TEST secret key (sk_test_…)'),
-      webhook_secret: z.string().trim().regex(/^whsec_/, 'Webhook signing secret starts with whsec_'),
-    }),
-    hint: (c) => ({ secret_key: maskSecret(c.secret_key), webhook_secret: maskSecret(c.webhook_secret) }),
-    test: async (c) => {
-      const Stripe = require('stripe');
-      const acct = await new Stripe(c.secret_key).balance.retrieve();
-      return { livemode: acct.livemode };
-    },
-  },
   telegram: {
-    name: 'Escalation alerts (Telegram bot)', purpose: 'Alert employees outside the app when a lead escalates to them.',
+    name: 'Messaging & alerts (Telegram bot)',
+    purpose: 'Customers message the bot (creates contacts + leads, two-way chat in the Inbox); employees get escalation alerts from the same bot.',
     limits: [
-      'Each employee must open the bot and press Start once, then save their chat ID on their Profile.',
-      'Telegram allows about 30 messages per second per bot; failed alerts are retried up to 3 times.',
+      'A bot can only message people who have started a chat with it first — customers must message the bot before we can reply.',
+      'Telegram confirms a message was accepted ("sent") but does not report delivered/read receipts to bots.',
+      'Customers can send /stop to opt out and /start to opt back in. Employees send /myid to get their chat ID for Profile.',
+      'Incoming messages need PUBLIC_URL to be https (the deployed Railway URL).',
     ],
     schema: z.object({ bot_token: z.string().trim().regex(/^\d+:[A-Za-z0-9_-]{30,}$/, 'Bot token looks like 123456:ABC…') }),
-    hint: (c) => ({ bot_token: maskSecret(c.bot_token) }),
+    hint: (c) => ({ bot_token: maskSecret(c.bot_token), bot: c.username ? `@${c.username}` : undefined }),
     test: async (c) => {
-      const r = await fetch(`https://api.telegram.org/bot${c.bot_token}/getMe`);
+      const r = await fetch(`https://api.telegram.org/bot${c.bot_token}/getMe`, { signal: AbortSignal.timeout(10000) });
       const j = await r.json();
       if (!j.ok) { const e = new Error(j.description || 'Telegram rejected the token'); e.status = r.status; throw e; }
+      c.username = j.result.username;
       return { username: j.result.username };
     },
+    after: async (ws, c) => registerWebhook(ws, c.bot_token),
+  },
+  googlepay: {
+    name: 'Payments (Google Pay — TEST environment)',
+    purpose: 'Send customers a payment link; they pay with the real Google Pay sheet and the opportunity updates automatically.',
+    limits: [
+      'TEST environment: no real money moves. Any card saved in the payer\'s Google account returns a test token.',
+      'Every payment token is verified against Google\'s published signing keys before a payment is marked paid.',
+      'Google Pay has no refund API or merchant dashboard in TEST mode, so refunds are recorded in this app by an authorised user.',
+      'Payment links expire after 30 minutes; card details never reach our servers.',
+    ],
+    schema: z.object({
+      merchant_name: z.string().trim().min(2, 'Shown to the customer in the Google Pay sheet').max(60),
+      verification: z.enum(['strict', 'log_only']).default('strict'),
+    }),
+    hint: (c) => ({ merchant_name: c.merchant_name, environment: 'TEST', verification: c.verification }),
+    test: async () => ({ environment: 'TEST' }),
   },
   google: {
     name: 'Calendar (Google)', purpose: 'Book appointments on employees\' real calendars.',
@@ -90,8 +78,7 @@ router.get('/integrations', requirePerm('integrations.manage'), async (req, res,
               (SELECT count(*)::int FROM users WHERE workspace_id = $1 AND is_active) AS users
          FROM google_tokens g WHERE g.workspace_id = $1`, [ws],
     )).rows[0];
-    const base = publicBase(req);
-    const data = Object.entries(PROVIDERS).map(([provider, meta]) => {
+        const data = Object.entries(PROVIDERS).map(([provider, meta]) => {
       const row = rows.find((r) => r.provider === provider) || {};
       const lastOk = [row.last_ok_at, lastEvent.find((e) => e.provider === provider)?.last_ok].filter(Boolean).sort().pop() || null;
       let status = row.status || 'not_connected';
@@ -100,8 +87,7 @@ router.get('/integrations', requirePerm('integrations.manage'), async (req, res,
         provider, name: meta.name, purpose: meta.purpose, limits: meta.limits, status,
         config_hint: row.config_hint || {}, last_ok_at: lastOk, last_error: row.last_error || null, last_error_at: row.last_error_at || null,
         recent_errors: errors.filter((e) => e.provider === provider).slice(0, 5),
-        ...(provider === 'twilio' ? { webhook_urls: { inbound: `${base}/api/v1/webhooks/twilio/${ws}`, status: `${base}/api/v1/webhooks/twilio/${ws}/status` } } : {}),
-        ...(provider === 'stripe' ? { webhook_urls: { events: `${base}/api/v1/webhooks/stripe/${ws}` }, webhook_events: ['checkout.session.completed', 'checkout.session.expired', 'checkout.session.async_payment_failed', 'payment_intent.payment_failed', 'charge.refunded'] } : {}),
+        ...(provider === 'telegram' ? { webhook_urls: { inbound: webhookUrl(ws) }, webhook_note: 'Registered with Telegram automatically when you save the bot token.' } : {}),
         ...(provider === 'google' ? { users_connected: google.connected, users_needing_reconnect: google.needs_reconnect, users_total: google.users } : {}),
         configurable: Boolean(meta.schema),
       };
@@ -120,7 +106,6 @@ router.put('/integrations/:provider', requirePerm('integrations.manage'), async 
       return res.status(400).json({ error: 'Invalid input', details });
     }
     const cfg = parsed.data;
-    if (req.params.provider === 'twilio' && !cfg.from.startsWith('whatsapp:')) cfg.from = `whatsapp:${cfg.from}`;
     const ws = req.user.ws;
     try {
       const info = await meta.test(cfg);
@@ -131,8 +116,12 @@ router.put('/integrations/:provider', requirePerm('integrations.manage'), async 
     }
     const existed = Boolean(await getConfig(ws, req.params.provider));
     await saveConfig(ws, req.params.provider, cfg, meta.hint(cfg), req.user.id);
+    let warning = null;
+    if (meta.after) {
+      try { const r = await meta.after(ws, cfg); warning = r?.warning || null; } catch (err) { warning = err.message; }
+    }
     await audit(req, { event_type: existed ? 'integration.updated' : 'integration.connected', target_type: 'integration', target_id: req.params.provider, after: meta.hint(cfg) });
-    res.json({ data: { provider: req.params.provider, status: 'connected', config_hint: meta.hint(cfg) } });
+    res.json({ data: { provider: req.params.provider, status: 'connected', config_hint: meta.hint(cfg), warning } });
   } catch (e) { next(e); }
 });
 
@@ -149,7 +138,7 @@ router.delete('/integrations/:provider', requirePerm('integrations.manage'), asy
 router.get('/integration-events', requirePerm('integrations.manage'), async (req, res, next) => {
   try {
     const where = ['workspace_id = $1']; const params = [req.user.ws];
-    if (PROVIDERS[req.query.provider]) { params.push(req.query.provider); where.push(`provider = $${params.length}`); }
+    if (PROVIDERS[req.query.provider] || req.query.provider === 'googlepay') { params.push(req.query.provider); where.push(`provider = $${params.length}`); }
     if (['ok', 'error', 'rejected', 'duplicate', 'retrying'].includes(req.query.status)) { params.push(req.query.status); where.push(`status = $${params.length}`); }
     if (['in', 'out'].includes(req.query.direction)) { params.push(req.query.direction); where.push(`direction = $${params.length}`); }
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);

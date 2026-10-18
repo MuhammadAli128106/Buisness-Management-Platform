@@ -9,7 +9,7 @@ const { pool } = require('../db/index');
 const telegram = require('./telegram');
 
 const MAX_ATTEMPTS = 3;
-const SOURCE_LABEL = { web_form: 'Web form', whatsapp: 'WhatsApp', manual: 'Manual entry' };
+const SOURCE_LABEL = { web_form: 'Web form', whatsapp: 'WhatsApp', telegram: 'Telegram', manual: 'Manual entry' };
 
 function publicUrl() {
   return (process.env.PUBLIC_URL || 'http://localhost:5173').replace(/\/+$/, '');

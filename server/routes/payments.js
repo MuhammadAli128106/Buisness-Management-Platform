@@ -1,18 +1,20 @@
-// Payments (I2.1, I2.6, I2.7) — owner: Musa. Mounted at /api/v1.
+// Payments (I2.1, I2.5, I2.6, I2.7) — owner: Musa. Mounted at /api/v1. Provider: Google Pay (TEST).
 const express = require('express');
 const { z } = require('zod');
-const { q } = require('../db/index');
+const { q, withTransaction } = require('../db/index');
 const { requirePerm, hasPerm } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { httpError } = require('../middleware/errorHandler');
 const { isUuid } = require('../utils/dbSecurity');
 const { money } = require('../utils/format');
+const { audit } = require('../utils/audit');
+const { logActivity } = require('../utils/activity');
 const crm = require('../services/crm');
-const { createPaymentRequest } = require('../services/stripe');
-const { sendWhatsApp } = require('../services/twilio');
+const { createPaymentRequest, expireStale } = require('../services/googlePay');
+const { sendToContact } = require('../services/messenger');
 
 const router = express.Router();
-const SELECT = `SELECT pm.*, o.title AS opportunity_title, ct.name AS contact_name, ct.phone AS contact_phone, u.name AS requested_by_name
+const SELECT = `SELECT pm.*, o.title AS opportunity_title, ct.name AS contact_name, u.name AS requested_by_name
   FROM payments pm JOIN opportunities o ON o.id = pm.opportunity_id JOIN contacts ct ON ct.id = pm.contact_id
   LEFT JOIN users u ON u.id = pm.requested_by`;
 const maskPay = (req, rows) => (hasPerm(req, 'opp.value.view') ? rows : rows.map((r) => ({ ...r, amount_cents: null, refunded_cents: null, value_masked: true })));
@@ -33,6 +35,7 @@ router.post('/opportunities/:id/payments', requirePerm('crm.edit'), validate({
 
 router.get('/payments', requirePerm('crm.view'), async (req, res, next) => {
   try {
+    await expireStale(req.user.ws);
     const where = ['pm.workspace_id = $1']; const params = [req.user.ws];
     const add = (sql, v) => { params.push(v); where.push(sql.replace('?', `$${params.length}`)); };
     if (req.query.status) add('pm.status = ?', req.query.status);
@@ -53,21 +56,46 @@ router.get('/payments', requirePerm('crm.view'), async (req, res, next) => {
 router.get('/payments/:id', requirePerm('crm.view'), async (req, res, next) => {
   try {
     if (!isUuid(req.params.id)) throw httpError(404, 'Not found');
+    await expireStale(req.user.ws);
     const row = (await q().query(`${SELECT} WHERE pm.id = $1 AND pm.workspace_id = $2`, [req.params.id, req.user.ws])).rows[0];
     if (!row) throw httpError(404, 'Not found');
     res.json({ data: maskPay(req, [row])[0] });
   } catch (e) { next(e); }
 });
 
-router.post('/payments/:id/send-whatsapp', requirePerm('crm.edit'), async (req, res, next) => {
+/** Send the link to the customer over Telegram. */
+router.post('/payments/:id/send', requirePerm('crm.edit'), async (req, res, next) => {
   try {
     if (!isUuid(req.params.id)) throw httpError(404, 'Not found');
     const p = (await q().query(`${SELECT} WHERE pm.id = $1 AND pm.workspace_id = $2`, [req.params.id, req.user.ws])).rows[0];
     if (!p) throw httpError(404, 'Not found');
-    if (p.status !== 'pending' || !p.checkout_url) throw httpError(409, 'Only pending payment links can be sent');
-    const m = await sendWhatsApp({ ws: req.user.ws, contactId: p.contact_id, userId: req.user.id,
+    if (p.status !== 'pending') throw httpError(409, 'Only pending payment links can be sent');
+    const m = await sendToContact({ ws: req.user.ws, contactId: p.contact_id, userId: req.user.id,
       body: `Hi ${p.contact_name.split(' ')[0]}, here is your secure payment link for "${p.description || p.opportunity_title}" (${money(p.amount_cents, p.currency)}): ${p.checkout_url}` });
     res.status(m.status === 'failed' ? 202 : 201).json({ data: m });
+  } catch (e) { next(e); }
+});
+
+/** Google Pay (TEST) has no refund API or merchant dashboard; an authorised user records the refund (I2.5). */
+router.post('/payments/:id/refund', requirePerm('crm.edit', 'opp.value.view'), validate({
+  body: z.object({ amount_cents: z.number().int().min(1), reason: z.string().trim().min(1, 'Give a reason').max(300) }),
+}), async (req, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) throw httpError(404, 'Not found');
+    const out = await withTransaction(async (c) => {
+      const p = (await c.query('SELECT * FROM payments WHERE id = $1 AND workspace_id = $2 FOR UPDATE', [req.params.id, req.user.ws])).rows[0];
+      if (!p) throw httpError(404, 'Not found');
+      if (!['paid', 'partially_refunded'].includes(p.status)) throw httpError(409, 'Only paid payments can be refunded');
+      const total = Number(p.refunded_cents) + req.body.amount_cents;
+      if (total > Number(p.amount_cents)) throw httpError(400, `You can refund at most ${money(p.amount_cents - p.refunded_cents, p.currency)}`);
+      const row = (await c.query(`UPDATE payments SET refunded_cents = $2, status = $3, updated_at = now() WHERE id = $1 RETURNING *`,
+        [p.id, total, total >= Number(p.amount_cents) ? 'refunded' : 'partially_refunded'])).rows[0];
+      await logActivity({ ws: req.user.ws, contact_id: p.contact_id, opportunity_id: p.opportunity_id, type: 'payment', actor_id: req.user.id,
+        summary: `Refund of ${money(req.body.amount_cents, p.currency)} recorded by ${req.user.name}: ${req.body.reason}`, data: { payment_id: p.id } }, c);
+      await audit(req, { event_type: 'payment.refunded', target_type: 'payment', target_id: p.id, before: { status: p.status, refunded_cents: p.refunded_cents }, after: { status: row.status, refunded_cents: total, reason: req.body.reason } }, c);
+      return row;
+    });
+    res.json({ data: out });
   } catch (e) { next(e); }
 });
 

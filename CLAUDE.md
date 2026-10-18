@@ -3,12 +3,20 @@
 > **Every Claude reading this: do Step 0 first, then read ONLY the shared sections + your own section.**
 > Nothing in this project is "somebody else's problem, so I'll quickly do it too". If a task is not in YOUR list, you do not build it — you call the contract function / endpoint the owner will deliver, exactly as written here. If you think something is missing from everyone's list, STOP and tell your human to ask Musa; Musa edits this file.
 
+> ## ⚠️ PROVIDER CHANGE (13:35) — overrides anything below that still says Twilio/WhatsApp/Stripe
+> Organiser announcement: services unavailable in Pakistan may be replaced. **Twilio and Stripe are NOT used.**
+> - **I1 Messaging = the workspace's Telegram bot.** Customers message the bot → contact + lead (source `telegram`) → two-way chat in Inbox. Webhook `POST /api/v1/webhooks/telegram/:wsId`, authenticated by the `X-Telegram-Bot-Api-Secret-Token` header (registered automatically via `setWebhook` when an admin saves the bot token), deduped on `update_id`. `/stop` opts out, `/start` opts back in, `/myid` replies with the sender's chat ID (employees paste it into Profile). Employee chats (matching `users.telegram_chat_id`) never become leads. The SAME bot sends Ali's escalation alerts (I4).
+> - **I2 Payments = Google Pay, TEST environment.** Employee creates a payment request → link `PUBLIC_URL/pay/<token>` (public page, 30-min expiry) → real Google Pay sheet → server verifies the ECv2 token signature against Google's published TEST keys → `paid`. Same token twice = no-op. Refunds are recorded in-app (`POST /payments/:id/refund`), since Google Pay TEST has no refund API.
+> - Code: `services/messenger.js` (`sendToContact`, `retryMessage`), `routes/webhooksTelegram.js`, `services/googlePay.js`, `routes/publicPay.js`, `client/src/pages/PayPage.jsx` — all Musa. `services/twilio.js`, `services/stripe.js` and their webhooks are deleted.
+> - Schema additions (in schema.sql): `contacts.telegram_chat_id/telegram_username`, `messages.external_id`, `payments.provider/link_token/provider_ref/expires_at`, lead source `telegram`, integration provider `googlepay`.
+> - Payment link sent to the customer: `POST /payments/:id/send` (over Telegram). Contact detail "Message" uses `POST /contacts/:id/messages` — it 422s with a clear reason if the contact never messaged the bot.
+
 ## Step 0 — who am I working for?
 Run `git config user.name` (and look at the human's messages). The team:
 
 | Person | Tooling | Role in one line |
 |---|---|---|
-| **Musa** | Claude Pro (Claude Code) | Foundation (auth, workspaces, permissions, audit, CRM backend), Twilio, Stripe, integrations page, dashboard backend, seed, isolation test |
+| **Musa** | Claude Pro (Claude Code) | Foundation (auth, workspaces, permissions, audit, CRM backend), Telegram messaging, Google Pay, integrations page, dashboard backend, seed, isolation test |
 | **Ali** | Claude Pro (Claude Code) | Lead engine F3 (assignment, ack, escalation, absence, recovery), Telegram alerts, Google Calendar, leads/profile UI |
 | **Muhammad Ahmed** | Free Claude / ChatGPT (chat only) | Provider account setup, all CRM pages, dashboard UI, contact/opportunity detail pages, responsive/a11y pass, README, QA |
 
@@ -18,17 +26,17 @@ If you can't tell who you're working for, ask: "Are you Musa, Ali or Ahmed?" and
 
 ## 1. What we're building (the problem in 6 lines)
 A multi-tenant CRM for 5–30 person service companies. Each company = one **workspace**, fully isolated.
-Core promise: **every incoming lead always has exactly one accountable owner** and escalates automatically if ignored (web form, WhatsApp, manual entry).
-Plus: customizable pipeline/fields, real WhatsApp (Twilio sandbox), real payments (Stripe test), real calendar (Google OAuth), escalation alerts via Telegram, append-only audit log, live dashboard.
+Core promise: **every incoming lead always has exactly one accountable owner** and escalates automatically if ignored (web form, Telegram message, manual entry).
+Plus: customizable pipeline/fields, real messaging (Telegram bot), real payments (Google Pay TEST), real calendar (Google OAuth), escalation alerts via Telegram, append-only audit log, live dashboard.
 Judges will test: workspace isolation via guessed IDs, server-side permission checks, double webhooks, two timers firing together, server restart mid-countdown, forged webhooks. Those are **never cut**.
 
 ## 2. Stack & runtime (decided — don't change)
-- **Server**: Node 20, Express 5 (CommonJS), `pg`, bcryptjs, jsonwebtoken, cookie-parser, helmet, express-rate-limit, **zod** (validation), `twilio`, `stripe`, `googleapis`. Telegram via plain `fetch` (no lib).
+- **Server**: Node 20, Express 5 (CommonJS), `pg`, bcryptjs, jsonwebtoken, cookie-parser, helmet, express-rate-limit, **zod** (validation), `googleapis`. Telegram via plain `fetch` (no lib).
 - **Client**: React 19 + Vite + Tailwind 3, react-router-dom 7, **swr**, **sonner** (toasts), recharts.
 - **DB**: one Railway Postgres (pg ≥ 13, `gen_random_uuid()` built in). Shared by all devs during the hackathon (put its *public* URL in your local `server/.env`). Reseeded at the end.
 - **Deploy**: ONE Railway service from `main`. Root `npm run build` builds the client; `npm start` runs `server/index.js`, which serves the API at `/api/v1` and `client/dist` as an SPA. Same origin → cookies just work, no CORS.
 - **Dev**: `cd server && npm run dev` (port 8080) + `cd client && npm run dev` (5173). Vite proxies `/api` → `http://localhost:8080`, so dev is also same-origin.
-- **Webhooks** (Twilio/Stripe) need public HTTPS: test them against the Railway URL, or locally with `cloudflared tunnel --url http://localhost:8080` and set `PUBLIC_URL` to the tunnel URL.
+- **Webhooks** (Telegram) need public HTTPS: test them against the Railway URL, or locally with `cloudflared tunnel --url http://localhost:8080` and set `PUBLIC_URL` to the tunnel URL.
 - **Real-time (Q11)**: SWR polling. Intervals: leads/recovery/inbox/conversation 3000 ms, dashboard 10000 ms. No websockets.
 - **Only Musa edits `package.json` files** (all deps above are pre-installed in push #1). Need a new dep? Ask Musa.
 
@@ -37,7 +45,7 @@ Judges will test: workspace isolation via guessed IDs, server-side permission ch
 |---|---|---|---|
 | 0:00–0:35 | Scaffold **push #1** (everything in §6 marked "stub" exists; auth+perms+audit work; UI kit; seed) | Write `leadEngine.js`, `leadTicker.js`, `notify.js` against §7/§9 (no running app needed yet) | Accounts & Railway (§13.A) |
 | 0:35–1:00 | **Push #2**: CRM backend (§8 CRM endpoints) | Wire engine, `routes/leads.js`, `routes/publicForms.js`, `routes/availability.js` | First deploy live; sign up demo workspace; register webhooks; paste creds on Integrations page |
-| 1:00–2:15 | Twilio I1 → Stripe I2 | Leads UI, Recovery, Rules, Profile, LeadAlerts, then Telegram I4 | Contacts, Companies, Opportunities, PipelineBoard, Settings/Pipelines, Settings/CustomFields |
+| 1:00–2:15 | Telegram messaging I1 → Google Pay I2 | Leads UI, Recovery, Rules, Profile, LeadAlerts, then Telegram I4 | Contacts, Companies, Opportunities, PipelineBoard, Settings/Pipelines, Settings/CustomFields |
 | 2:15–3:15 | Integrations page + events log, dashboard + metrics, `/contacts/:id/full`, Audit page, isolation test, final seed | Google Calendar I3 + AppointmentsPanel + BookAppointmentModal | Dashboard UI, ContactDetail, OpportunityDetail, ActivityTimeline, responsive/a11y pass |
 | **3:15** | **CODE FREEZE — bug fixes only, no features** | | |
 | 3:15–3:40 | fix bugs | fix bugs | run §15 checklist on deployed URL (phone + laptop), report bugs to file owner; README + `.env.example` |
@@ -63,7 +71,7 @@ GOOGLE_CLIENT_ID=        # platform-level OAuth client (employees each consent i
 GOOGLE_CLIENT_SECRET=
 PORT=                    # Railway sets it; local default 8080
 ```
-Twilio / Stripe / Telegram credentials are **per workspace**, entered on the Integrations page, stored encrypted in `integrations.config_enc` (I5.2, I5.3). Never in env, never sent to the browser, shown only masked (`AC…a1b2`).
+Telegram bot token + Google Pay merchant name are **per workspace**, entered on the Integrations page, stored encrypted in `integrations.config_enc` (I5.2, I5.3). Never in env, never sent to the browser, shown only masked (`AC…a1b2`).
 
 ---
 
@@ -80,12 +88,12 @@ server/
   middleware/auth.js csrf.js errorHandler.js validate.js                            Musa
   utils/sessionCookie.js refreshToken.js csrf.js jwtSecret.js passwordPolicy.js
         dbSecurity.js audit.js activity.js mask.js crypto.js retry.js format.js      Musa
-  services/integrationsStore.js integrationEvents.js metrics.js twilio.js stripe.js Musa
+  services/integrationsStore.js integrationEvents.js metrics.js messenger.js googlePay.js Musa
   services/leadEngine.js leadTicker.js notify.js telegram.js google.js              Ali
   routes/auth.js users.js roles.js companies.js contacts.js opportunities.js
          pipelines.js customFields.js savedLists.js notes.js activities.js export.js
          audit.js dashboard.js integrations.js messaging.js payments.js
-         webhooksTwilio.js webhooksStripe.js me.js (prefs only)                       Musa
+         webhooksTelegram.js publicPay.js me.js (prefs only)                         Musa
   routes/leads.js publicForms.js availability.js assignmentRules.js
          telegram.js calendar.js appointments.js                                     Ali
   scripts/isolation-test.sh                                                          Musa
@@ -101,7 +109,7 @@ client/src/
   components/LeadAlerts.jsx AvailabilityToggle.jsx Countdown.jsx
              AppointmentsPanel.jsx BookAppointmentModal.jsx                          Ali
   components/CustomFieldInputs.jsx FilterBar.jsx ActivityTimeline.jsx               Ahmed
-  pages/Login.jsx Signup.jsx Inbox.jsx Payments.jsx Audit.jsx
+  pages/Login.jsx Signup.jsx Inbox.jsx Payments.jsx Audit.jsx PayPage.jsx
         settings/Users.jsx settings/Roles.jsx settings/Integrations.jsx               Musa
   pages/Leads.jsx LeadDetail.jsx Recovery.jsx PublicForm.jsx Profile.jsx
         settings/AssignmentRules.jsx                                                 Ali
@@ -396,16 +404,17 @@ CREATE TABLE IF NOT EXISTS notifications (
 | GET /dashboard | auth | see §11; Owner/Admin-level → company-wide, User-level → personal |
 | PUT /me/prefs | auth | `{dashboard_hidden:[keys]}` (F5.5) |
 | GET /integrations | integrations.manage | per provider: `{provider,status,config_hint,last_ok_at,last_error,last_error_at,limits:[strings]}` |
-| PUT /integrations/:provider · DELETE /integrations/:provider | integrations.manage | twilio `{account_sid,auth_token,from}`, stripe `{secret_key,webhook_secret}`, telegram `{bot_token}`; validates by a test call; audit `integration.*` |
+| PUT /integrations/:provider · DELETE /integrations/:provider | integrations.manage | telegram `{bot_token}` (also registers the webhook), googlepay `{merchant_name, verification:'strict'|'log_only'}`; validates by a test call; audit `integration.*` |
 | GET /integration-events?provider=&status=&page= | integrations.manage | I5.4 sync history |
 | GET /conversations?mine=1 · GET /conversations/:id/messages | crm.view (+ only own unless `leads.view_all`) | I1.6 |
 | POST /conversations/:id/messages · POST /contacts/:id/messages | crm.edit | `{body}`; blocked with 422 + reason if `opted_out` (I1.9) |
 | POST /messages/:id/retry | crm.edit | only for `failed/undelivered` (I1.7) |
-| POST /webhooks/twilio/:wsId · POST /webhooks/twilio/:wsId/status | public, signature-checked | |
+| POST /webhooks/telegram/:wsId | public, secret-token-checked | Telegram updates (I1.1, I1.2, I1.8) |
 | POST /opportunities/:id/payments | crm.edit | `{amount_cents,currency,description?}` → `{data:{...payment, checkout_url}}` |
-| GET /payments?status=&page= | crm.view | each row: opportunity, contact, requested_by name, stripe ref (I2.7) |
-| POST /payments/:id/send-whatsapp | crm.edit | sends checkout_url to contact via Twilio |
-| POST /webhooks/stripe/:wsId | public, raw body, signature-checked | |
+| GET /payments?status=&page= | crm.view | each row: opportunity, contact, requested_by name, provider_ref (I2.7) |
+| POST /payments/:id/send | crm.edit | sends the pay link to the contact over Telegram |
+| POST /payments/:id/refund | crm.edit + opp.value.view | `{amount_cents, reason}` → refunded / partially_refunded |
+| GET /public/pay/:token · POST /public/pay/:token/complete `{paymentData}` · POST /public/pay/:token/abandon | public (token) | pay page data / Google Pay token verification |
 
 ### Ali's endpoints
 | Method & path | Perm | Body → Response |
@@ -454,7 +463,7 @@ closeLeadsForContact({ ws, contactId, client })         // used by contact delet
 **`utils/retry.js` (Musa)** `withRetry(fn, { attempts: 3, baseMs: 500, isTemporary: (err) => bool })` — temporary = network error, 429, 5xx (I5.5)
 **`services/integrationsStore.js` (Musa)** `getConfig(ws, provider) → obj|null`, `markOk(ws, provider)`, `markError(ws, provider, message)`
 **`services/integrationEvents.js` (Musa)** `recordEvent({ ws, provider, direction, kind, external_id, status, http_status, error, detail })` — **every** inbound webhook and outbound provider call (incl. Ali's Telegram & Google calls) must call this (I5.4).
-**`services/twilio.js` (Musa)** `sendWhatsApp({ ws, contactId, body, userId }) → message row` — the only place that talks to Twilio; nobody else re-implements it.
+**`services/messenger.js` (Musa)** `sendToContact({ ws, contactId, body, userId }) → message row` — customer messaging over Telegram; uses Ali's `telegram.sendMessage`.
 **`client/src/utils/api.js` (Musa)** exports `apiFetch(path, opts)`, `apiGet(path)` (also the SWR fetcher), `apiPost(path, body)`, `apiPatch(path, body)`, `apiDelete(path)` — all throw `Error(serverErrorText)` with `.status` and `.details` attached; CSRF + refresh handled inside.
 **`middleware/auth.js` (Musa)** `requireAuth`, `requirePerm(...keys)` (all required), `hasPerm(req, key)`
 **`middleware/validate.js` (Musa)** `validate({ body?, query?, params? })` with zod schemas
@@ -490,26 +499,16 @@ All computed in `services/metrics.js` (Musa) and reused by drill-down list filte
 | `escalations_24h` | `lead_assignments` reason `escalation` in last 24h (manual counted separately as `manual_reassignments_24h`) | `/leads?scope=all&escalated=24h` |
 | `availability` | count of users per status + list | `/settings/users` |
 | `upcoming_appointments` | next 5 `scheduled` with `starts_at > now()` | `/contacts/:id` |
-| `collected_this_month_cents` | sum `amount_cents` of payments with `paid_at` this month and status paid/partially_refunded/refunded **minus** `refunded_cents` — Stripe-webhook-confirmed only (I2.6) | `/payments?status=paid` |
+| `collected_this_month_cents` | sum `amount_cents` of payments with `paid_at` this month and status paid/partially_refunded/refunded **minus** `refunded_cents` — only Google-Pay-verified payments (I2.6) | `/payments?status=paid` |
 | `projected_cents` | open pipeline value + pending payment requests | — |
 User-level → each figure filtered to their own leads/opps/appointments. Response: `{data:{scope:'company'|'personal', figures:{key: value,...}, hidden:[keys]}}`.
 
 ---
 
 ## 12. Integration specifics (owners implement; listed so nobody guesses)
-**Twilio WhatsApp (Musa)** — webhook URL `PUBLIC_URL/api/v1/webhooks/twilio/<wsId>`.
-1. Load config for wsId (404 if none). `twilio.validateRequest(auth_token, req.header('X-Twilio-Signature'), PUBLIC_URL + req.originalUrl, req.body)`; false → 403, `recordEvent(status 'rejected')`, audit `webhook.rejected` (I1.2).
-2. Transaction: `INSERT INTO webhook_dedupe ('twilio', MessageSid) ON CONFLICT DO NOTHING` → 0 rows → `recordEvent('duplicate')`, return 200 (I1.8).
-3. `From` `whatsapp:+923...` → E.164 → contact by phone; none → create contact (source whatsapp) + `createLead` (I1.5). Body `STOP` → `opted_out=true`.
-4. Upsert conversation, insert message `received`, activity `message_in`, `last_message_at`. Return empty TwiML 200.
-- Send: `client.messages.create({from, to:'whatsapp:'+phone, body, statusCallback: PUBLIC_URL+'/api/v1/webhooks/twilio/<wsId>/status'})` with `withRetry`; permanent failure → message `failed` with Twilio error code/message, Retry button (I1.7). Status callback → update status (signature-checked too) (I1.4).
-- Limits text (I5.6): "Sandbox only reaches phones that sent the join phrase; free-form replies only within 24 h of the customer's last message."
+**Telegram messaging (Musa)** — see the PROVIDER CHANGE box at the top. Limits text (I5.6): bots can only message people who messaged them first; Telegram confirms "sent" but gives bots no delivered/read receipts.
 
-**Stripe (Musa)** — webhook URL `PUBLIC_URL/api/v1/webhooks/stripe/<wsId>`, events: `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_failed`, `payment_intent.payment_failed`, `charge.refunded`.
-- Route mounted with `express.raw({type:'application/json'})` **before** `express.json`. `stripe.webhooks.constructEvent(rawBody, sig, webhook_secret)` before touching anything (I2.3). Dedupe on `event.id` via `webhook_dedupe` (I2.4).
-- Create: `checkout.sessions.create({mode:'payment', line_items:[{price_data:{currency, unit_amount, product_data:{name}}, quantity:1}], metadata:{payment_id, ws}, success_url: PUBLIC_URL+'/payments?paid=1', cancel_url: ..., expires_at: now+30min})`. Never touch card data (I2.8).
-- Map: completed → `paid` (+paid_at, payment_intent); expired → `expired`; failed → `failed` + reason; refunded → `refunded`/`partially_refunded` + `refunded_cents`. Each → activity `payment`.
-- Limits: "Test mode: use card 4242 4242 4242 4242, any future date, any CVC."
+**Google Pay TEST (Musa)** — see the PROVIDER CHANGE box. Token: `PAYMENT_GATEWAY` with gateway `example` / `exampleGatewayMerchantId`; server verifies the ECv2 intermediate-key + message signatures (recipient `gateway:example`) against `https://payments.developers.google.com/paymentmethodtoken/test/keys.json`. Card data never reaches us (I2.8). Expired = pending link past `expires_at` (swept on read).
 
 **Google Calendar (Ali)** — redirect URI `PUBLIC_URL/api/v1/integrations/google/callback`, scopes `calendar.events`, `calendar.readonly` (freebusy), `openid email`. `access_type:'offline', prompt:'consent'`. Tokens encrypted in `google_tokens`. Before each call refresh if `expires_at < now()+60s`; `invalid_grant` → `status='needs_reconnect'` shown on Profile and Users page (I3.2, I3.7). Busy check via `freebusy.query` (I3.4). Store `starts_at` timestamptz + IANA `timezone`; send `{dateTime, timeZone}` to Google; display in viewer's timezone with the zone label (I3.5). Limits: "App is in Google testing mode — only listed test users can connect; refresh tokens may expire after 7 days."
 
@@ -532,7 +531,7 @@ Push #1 (T+0:35):
 - [ ] **all stubs** from §6 with exact §9 signatures; all routes/pages registered; Sidebar filtered by `useCan`
 - [ ] `seed.js`: workspace "Acme Solar" (owner@acme.test / Demo1234!, admin ali@acme.test, users ahmed@acme.test + rep2@acme.test, all `Demo1234!`, backup/manager set), 20 contacts, 8 opps, 2nd pipeline "Installations" with its own custom field; workspace "Beta Realty" (owner@beta.test) for isolation tests
 Push #2 (T+1:00): companies, contacts, opportunities, move+required fields, pipelines/stages (reorder, safe delete), custom fields, saved lists, notes, activities, export (F1.4, F2.1–F2.7, Q4, Q9)
-Then: Twilio (I1.1–I1.9) → Stripe (I2.1–I2.8) → Integrations page + event log (I5.1–I5.8) → Inbox page, ConversationPanel, PaymentsPanel, Payments page → `/dashboard` + `metrics.js` (F5.1–F5.4) → `/contacts/:id/full` (F2.8) → Audit page with filters (F4.2) → `scripts/isolation-test.sh` (curl: log in as Beta owner, GET/PATCH/DELETE 3 Acme ids → expect 404; log in as Acme Sales Rep, DELETE contact → 403, GET opportunity → value null; PATCH /audit → 404 route) (F1.5, F1.6, F4.3, Q2).
+Then: Telegram messaging (I1.1–I1.9) → Google Pay (I2.1–I2.8) → Integrations page + event log (I5.1–I5.8) → Inbox page, ConversationPanel, PaymentsPanel, Payments page → `/dashboard` + `metrics.js` (F5.1–F5.4) → `/contacts/:id/full` (F2.8) → Audit page with filters (F4.2) → `scripts/isolation-test.sh` (curl: log in as Beta owner, GET/PATCH/DELETE 3 Acme ids → expect 404; log in as Acme Sales Rep, DELETE contact → 403, GET opportunity → value null; PATCH /audit → 404 route) (F1.5, F1.6, F4.3, Q2).
 Use Opus for: auth/permissions, webhooks, metrics. Sonnet is fine for CRUD routes and pages.
 
 ### ALI — owns F3 (all), F4 lead events, I3, I4, Q5 timers
@@ -550,11 +549,11 @@ Switch to Sonnet for pages; keep Opus for engine/ticker/Google token handling.
 **A. Accounts (T+0:00–0:35, no AI needed).** Send every secret to Musa & Ali privately (WhatsApp), never in git.
 1. Ask Ali to add you as repo collaborator.
 2. **Railway**: New Project → Deploy from GitHub repo `Buisness-Management-Platform` → add PostgreSQL. Service Variables: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `JWT_SECRET`, `APP_ENC_KEY` (each `openssl rand -hex 32`), `NODE_ENV=production`, `PUBLIC_URL` (Settings → Networking → Generate Domain, then paste `https://...`). Build command `npm run build`, start `npm start`. Postgres → Connect → copy the **public** URL and send it to the team for local `.env`.
-3. **Twilio**: sign up → Messaging → Try it out → WhatsApp sandbox. All 3 of us send the join phrase from our phones. Copy Account SID, Auth Token, sandbox number (`whatsapp:+14155238886`).
-4. **Stripe**: sign up, stay in **Test mode** → Developers → API keys → copy `sk_test_...`.
+3. ~~Twilio~~ — **NOT USED** (replaced by Telegram).
+4. ~~Stripe~~ — **NOT USED**. Google Pay TEST needs no account; the payer just needs Chrome signed in to a Google account.
 5. **Google Cloud**: new project → enable "Google Calendar API" → OAuth consent screen: External, Testing, add **all 3 team Gmails as test users** → Credentials → OAuth client ID (Web) → Authorized redirect URI `PUBLIC_URL/api/v1/integrations/google/callback` → put `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in Railway variables.
 6. **Telegram**: @BotFather → /newbot → copy token. Each of us messages the new bot `/start`, and gets our chat id from @userinfobot.
-7. After first deploy: open the app → Sign up "Acme Solar" → Settings → Integrations shows the workspace id → (a) Twilio sandbox settings "When a message comes in" = `PUBLIC_URL/api/v1/webhooks/twilio/<wsId>` (POST); (b) Stripe → Developers → Webhooks → Add endpoint `PUBLIC_URL/api/v1/webhooks/stripe/<wsId>`, events listed in §12 → copy `whsec_...`; (c) paste Twilio, Stripe (sk + whsec), Telegram token into Integrations page.
+7. After first deploy (PUBLIC_URL must be the https Railway URL): log in → Settings → Integrations → Telegram: paste the bot token (this registers the webhook automatically) → Google Pay: enter the business name. Each employee sends `/myid` to the bot and pastes the reply into Profile.
 
 **B. Pages (from T+1:00).** One chat per file. Every chat starts with this paste, then the page request:
 > "I'm building a React 19 + Vite + Tailwind app. Here are the project rules, API and tables: [paste §8 conventions + the endpoint rows you need + §7 tables you need]. Here is our api helper: [paste `client/src/utils/api.js`]. Here is our UI kit usage and an example page: [paste the UI kit list below + `client/src/pages/settings/Users.jsx`]. Write the COMPLETE file `client/src/pages/<Name>.jsx`. Rules: data via `useSWR(path, apiGet)`; mutations via `apiPost/apiPatch/apiDelete` then `mutate()`; toasts via `toast.success/toast.error` from 'sonner' showing the server's `error` text; use `useCan()` to hide buttons the user can't use; every input inside `<Field label>`; must work at 375 px wide with no horizontal scroll (tables become cards on mobile — DataTable does this); buttons show loading state; empty and error states shown; never use dangerouslySetInnerHTML."
@@ -595,8 +594,8 @@ Pages in this order (requirement IDs to satisfy):
 5. Rules: ack window 20 s. Submit `/f/acme-solar` → lead assigned with countdown → wait → escalates → Telegram message arrives within seconds → audit shows `lead.escalated` by System. (F3.1, F3.3–F3.5, F3.9, I4)
 6. Set a rep On leave → their unacknowledged leads move instantly; recovery queue shows reasons. (F3.6, F3.7)
 7. Railway → restart service during a countdown → escalation still fires once. Two leads expiring together → no double escalation. (Q5, F3.8)
-8. WhatsApp from an unknown phone → new contact + lead appear without refresh; reply from Inbox → delivered tick; resend same webhook (curl) → no duplicate; forged request → rejected + logged; opted-out contact → send blocked with reason. (I1)
-9. Payment link from opportunity → pay 4242… → status Paid without refresh → dashboard collected rises → refund in Stripe dashboard → Refunded. (I2)
+8. Message the Telegram bot from a phone that isn't an employee → new contact + lead appear without refresh; reply from Inbox → arrives on the phone; replay the same update (curl) → no duplicate; request without the secret header → rejected + logged; `/stop` → contact opted out, sending blocked with reason. (I1)
+9. Payment link from opportunity → open on phone/Chrome → pay with Google Pay (TEST) → status Paid without refresh → dashboard collected rises → record a refund → Refunded / Partially refunded. Let a link pass 30 min → Expired. (I2)
 10. Connect Google → book over a busy slot (warning) → book free slot → shows in Google Calendar + contact page → reschedule → Google updates. (I3)
 11. Integrations page: statuses, last success, recent errors, event history, limits text. (I5)
 12. Dashboard as Owner vs Sales Rep; click 3 figures → filtered lists match numbers; hide a card → refresh → still hidden. (F5)
