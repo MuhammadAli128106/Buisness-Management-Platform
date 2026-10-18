@@ -4,15 +4,23 @@ import { createPortal } from 'react-dom';
 /** <Modal open onClose title footer={<Buttons/>} size="md|lg">…</Modal> — Esc closes, focus moves inside (Q8). */
 export default function Modal({ open, onClose, title, children, footer, size = 'md' }) {
   const ref = useRef(null);
+  // Keep the latest onClose without re-running the effect: parents pass a new arrow function on every
+  // render, which used to re-focus the first control (the ✕ button) after each keystroke.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.activeElement;
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    const onKey = (e) => { if (e.key === 'Escape') onCloseRef.current?.(); };
     document.addEventListener('keydown', onKey);
-    setTimeout(() => ref.current?.querySelector('input,select,textarea,button')?.focus(), 0);
+    setTimeout(() => {
+      const body = ref.current;
+      (body?.querySelector('input:not([type=hidden]):not([disabled]),select:not([disabled]),textarea:not([disabled])')
+        || body?.querySelector('button'))?.focus();
+    }, 0);
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = ''; prev?.focus?.(); };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   const w = size === 'lg' ? 'max-w-2xl' : size === 'sm' ? 'max-w-sm' : 'max-w-lg';
   return createPortal(
