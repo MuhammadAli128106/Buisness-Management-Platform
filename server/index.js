@@ -1,4 +1,4 @@
-// server/index.js — owner: Musa. Long-running entry (local dev / Railway). Routes live in app.js.
+// server/index.js — owner: Musa. Long-running entry (local dev). Routes live in app.js.
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const { initDb } = require('./db/index');
 const app = require('./app');

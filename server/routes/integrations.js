@@ -22,7 +22,7 @@ const PROVIDERS = {
       'A bot can only message people who have started a chat with it first — customers must message the bot before we can reply.',
       'Telegram confirms a message was accepted ("sent") but does not report delivered/read receipts to bots.',
       'Customers can send /stop to opt out and /start to opt back in. Employees send /myid to get their chat ID for Profile.',
-      'Incoming messages need PUBLIC_URL to be https (the deployed Railway URL).',
+      'Incoming messages need PUBLIC_URL to be https (the deployed Vercel URL).',
     ],
     schema: z.object({ bot_token: z.string().trim().regex(/^\d+:[A-Za-z0-9_-]{30,}$/, 'Bot token looks like 123456:ABC…') }),
     hint: (c) => ({ bot_token: maskSecret(c.bot_token), bot: c.username ? `@${c.username}` : undefined }),

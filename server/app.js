@@ -11,7 +11,7 @@ const { requireCsrf } = require('./middleware/csrf');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
-app.set('trust proxy', 1); // Railway / tunnels sit behind one proxy
+app.set('trust proxy', 1); // Vercel / tunnels sit behind one proxy
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(cookieParser());
