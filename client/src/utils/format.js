@@ -7,10 +7,18 @@ export function money(cents, currency = 'USD') {
 }
 
 /** Shows date+time in the viewer's timezone (or a given IANA zone) with the zone label (I3.5). */
+// Note: dateStyle/timeStyle can't be combined with timeZoneName (browsers throw "Invalid option"),
+// so the parts are spelled out. Never throws: a bad date or zone falls back to a plain string.
+const DT_PARTS = { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' };
 export function dateTime(iso, timeZone) {
   if (!iso) return '—';
   const d = new Date(iso);
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone, timeZoneName: 'short' }).format(d);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  try {
+    return new Intl.DateTimeFormat(undefined, { ...DT_PARTS, timeZone: timeZone || undefined }).format(d);
+  } catch {
+    try { return new Intl.DateTimeFormat(undefined, DT_PARTS).format(d); } catch { return d.toISOString(); }
+  }
 }
 export function dateOnly(iso) {
   if (!iso) return '—';
