@@ -1,7 +1,9 @@
-// STUB — owner: Musa. Mounted at /api/v1/dashboard by server/index.js. Replace the body; keep `module.exports = router`.
+// GET /dashboard (F5.1–F5.4) — owner: Musa. Figures defined in services/metrics.js.
 const express = require('express');
+const { dashboard } = require('../services/metrics');
 
 const router = express.Router();
-router.use((req, res) => res.status(501).json({ error: 'Not implemented yet' }));
-
+router.get('/', async (req, res, next) => {
+  try { res.json({ data: await dashboard(req) }); } catch (e) { next(e); }
+});
 module.exports = router;
