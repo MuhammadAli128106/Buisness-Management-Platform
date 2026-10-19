@@ -1,4 +1,22 @@
-# Unified Business Management Platform
+<div align="center">
+
+# 💼 Unified Business Management Platform
+
+### No lead left behind.
+
+![React](https://img.shields.io/badge/React_19-20232A?style=flat&logo=react&logoColor=61DAFB)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-0F172A?style=flat&logo=tailwindcss&logoColor=38BDF8)
+![Node.js](https://img.shields.io/badge/Node_20-339933?style=flat&logo=nodedotjs&logoColor=white)
+![Express](https://img.shields.io/badge/Express_5-000000?style=flat&logo=express&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)
+![Telegram](https://img.shields.io/badge/Telegram_Bot-26A5E4?style=flat&logo=telegram&logoColor=white)
+![Google Pay](https://img.shields.io/badge/Google_Pay_(test)-4285F4?style=flat&logo=googlepay&logoColor=white)
+
+</div>
+
+---
+
 
 A multi-tenant CRM for service companies with 5 to 30 people. Each company gets its own **workspace**, fully isolated from every other.
 
@@ -33,8 +51,8 @@ The server serves the API at `/api/v1` and the built client as a single-page app
 
 1. **Clone**
    ```bash
-   git clone https://github.com/MuhammadAli128106/Buisness-Management-Platform
-   cd Buisness-Management-Platform
+   git clone https://github.com/MuhammadAli128106/Business-Management-Platform
+   cd Business-Management-Platform
    ```
 2. **Create `server/.env`** from the template, then fill in every value (see the table below):
    ```bash
@@ -138,3 +156,13 @@ Expected: every cross-workspace request returns 404, and unauthorized deletes re
 - `git pull --rebase` before every push.
 - Before pushing: `cd client && npm run build` must pass and `node server/index.js` must boot.
 - Never commit `.env`, keys or tokens. Never force-push.
+
+## Team
+
+Built in a 4-hour hackathon by a team of three:
+
+| Who | Built |
+|---|---|
+| **Musa** | Foundation (auth, workspaces, permissions, audit, CRM backend), Telegram messaging, Google Pay, integrations, dashboard backend |
+| **[Syed Muhammad Ali](https://github.com/MuhammadAli128106)** | Lead engine (assignment, acknowledgement, escalation, absence, recovery), Telegram alerts, Google Calendar, leads and profile UI |
+| **Muhammad Ahmed** | Provider setup, CRM pages, dashboard UI, contact and opportunity detail pages, responsive and accessibility pass, QA |
